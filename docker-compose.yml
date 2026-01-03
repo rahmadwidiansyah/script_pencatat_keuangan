@@ -1,0 +1,7 @@
+services:
+  ai-finance:
+    container_name: ai_keuangan_service
+    build: .
+    restart: always
+    ports:
+      - "3987:3987"
