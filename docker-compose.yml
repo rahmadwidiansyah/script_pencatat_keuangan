@@ -1,7 +1,17 @@
+name: python-test
 services:
-  ai-finance:
-    container_name: ai_keuangan_service
-    build: .
-    restart: always
-    ports:
-      - "3987:3987"
+    api:
+        container_name: script-pencatat-keuangan
+        hostname: script-pencatat-keuangan
+        image: ghcr.io/rahmadwidiansyah/script_pencatat_keuangan:v1.3
+        networks:
+            default: null
+        ports:
+            - mode: ingress
+              target: 3987
+              published: "3987"
+              protocol: tcp
+        restart: unless-stopped
+networks:
+    default:
+        name: python-test_default
