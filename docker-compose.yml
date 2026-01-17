@@ -11,6 +11,8 @@ services:
               target: 3987
               published: "3987"
               protocol: tcp
+        env_file:
+            - .env
         restart: unless-stopped
 networks:
     default:
