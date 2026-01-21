@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="AI Keuangan Pro")
+app = FastAPI(title="AI Keuangan Pro v1.6.6")
 
 # --- API KEY CONFIG ---
 API_KEY_NAME = "X-API-KEY"
@@ -30,22 +30,25 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 
 WALLET_GROUPS = {
     "LIQUID": {
-        "shopeepay": [".spay", ".shopeepay", "shopeepay", "spay"],
-        "seabank":   [".seabank", ".sea", "seabank"],
-        "dana":      [".dana", "dana"],
-        "gopay":     [".gopay", "gopay", "gojek"],
-        "cash":      [".tunai", "cash", "dompet", "tunai"],
-        "market pulsa": ["market", "saldo market", "marketpulsa"]
+        "shopeepay": ["shopeepay", "spay"], # Hapus titik di depan agar regex boundary bekerja
+        "seabank":   ["seabank", "sea bank"],
+        "dana":      ["dana"],
+        "gopay":     ["gopay", "gojek"],
+        "cash":      ["cash", "dompet", "tunai", "uang cash"],
+        "market pulsa": ["mcp", "saldo market", "marketpulsa"]
     },
     "INVESTMENT": {
         "emas":      ["emas", "tabungan emas", "pegadaian", "logam mulia"],
-        "tabungan":  ["tabungan", "nabung"]
+        "tabungan":  ["tabungan", "nabung", "rekening"] # Tambah bank umum
     }
 }
 
-ALL_WALLETS = {}
-for group in WALLET_GROUPS.values():
-    ALL_WALLETS.update(group)
+# --- OPTIMASI B: REVERSE MAPPING (Keyword -> Wallet Key) ---
+KEYWORD_TO_WALLET = {}
+for group_name, wallets in WALLET_GROUPS.items():
+    for wallet_key, keywords in wallets.items():
+        for kw in keywords:
+            KEYWORD_TO_WALLET[kw.lower()] = wallet_key
 
 CATEGORIES_CONFIG = {
     # --- HUTANG & PIUTANG (LOGIKA BARU) ---
@@ -82,31 +85,69 @@ CATEGORIES_CONFIG = {
     ("🔄 Pindah Saldo", "Transfer 🔵"): ["pindah", "topup", "top up", "isi saldo", "tarik", "transfer", "tf", "kirim", "nabung", "simpan", "deposit", "withdraw", "wd", "jual"]
 }
 
+# --- OPTIMASI C: PRECOMPILE CATEGORY REGEX ---
+CATEGORY_PATTERNS = []
+for (cat, typ), keywords in CATEGORIES_CONFIG.items():
+    # Sort keywords by length desc agar keyword panjang match duluan ("makan siang" > "makan")
+    keywords.sort(key=len, reverse=True)
+    # Escape keywords special char
+    escaped = [re.escape(k) for k in keywords]
+    # Gabung jadi satu regex besar: \b(keyword1|keyword2)\b
+    pattern = re.compile(r'\b(?:' + "|".join(escaped) + r')\b', re.IGNORECASE)
+    CATEGORY_PATTERNS.append(((cat, typ), pattern))
+
 # ==========================================
 # 2. LOGIC FUNCTIONS
 # ==========================================
 
+# --- REVISI POIN A: PARSING NOMINAL AMAN ---
 def get_nominal_smart(text):
-    clean_text = text.lower().replace(".", "").replace(",", "")
-    match_suffix = re.search(r'(\d+)\s*(rb|ribu|k|jt|juta)\b', clean_text)
+    text_lower = text.lower()
+
+    # 1. Cek Suffix (1.5jt, 10rb, 2,5jt)
+    # Regex ini support titik/koma sebagai desimal JIKA ada suffix
+    match_suffix = re.search(r'(\d+[.,]?\d*)\s*(rb|ribu|k|jt|juta)\b', text_lower)
+
     if match_suffix:
-        angka = int(match_suffix.group(1))
+        angka_str = match_suffix.group(1).replace(",", ".") # Normalisasi koma jadi titik desimal
         suffix = match_suffix.group(2)
-        if suffix in ['rb', 'ribu', 'k']: return angka * 1000
-        elif suffix in ['jt', 'juta']: return angka * 1000000
+
+        try:
+            angka = float(angka_str)
+            if suffix in ['rb', 'ribu', 'k']:
+                return int(angka * 1000)
+            elif suffix in ['jt', 'juta']:
+                return int(angka * 1000000)
+        except ValueError:
+            pass # Jika gagal parse float, lanjut ke bawah
+
+    # 2. Fallback: Angka tanpa suffix (Ex: 15000, 20.000)
+    # Hapus titik (separator ribuan) dan koma (separator desimal yang gak penting di angka bulat)
+    clean_text = text_lower.replace(".", "").replace(",", "")
     all_numbers = re.findall(r'\b\d+\b', clean_text)
+
+    # Filter angka >= 1000 (kecuali nominal kecil memang valid untukmu, bisa disesuaikan)
     valid_numbers = [int(n) for n in all_numbers if int(n) >= 1000]
+
     return max(valid_numbers) if valid_numbers else None
 
+# --- REVISI POIN B: DETEKSI WALLET OPTIMIZED ---
 def detect_wallets_ordered(text):
-    text = text.lower()
+    text_lower = text.lower()
     matches = []
-    for wallet_key, keywords in ALL_WALLETS.items():
-        for kw in keywords:
-            pattern = re.compile(r'\b' + re.escape(kw) + r'\b')
-            for m in pattern.finditer(text):
-                matches.append((m.start(), wallet_key))
+
+    # Loop melalui dictionary yang sudah di-flatten (lebih efisien)
+    for kw, wallet_key in KEYWORD_TO_WALLET.items():
+        # Gunakan regex boundary \b untuk match kata utuh
+        # Ex: "perdana" tidak akan match "dana"
+        pattern = r'\b' + re.escape(kw) + r'\b'
+
+        for m in re.finditer(pattern, text_lower):
+            matches.append((m.start(), wallet_key))
+
+    # Sort berdasarkan posisi kemunculan di teks (Source -> Dest)
     matches.sort(key=lambda x: x[0])
+
     ordered = []
     seen = set()
     for _, w in matches:
@@ -116,27 +157,43 @@ def detect_wallets_ordered(text):
     return ordered
 
 def extract_subject(text):
-    match = re.search(r'#(\w+)', text)
+    match = re.search(r'#([a-zA-Z0-9_]+)', text) # Tangkap #nama (alphanumeric only)
     return match.group(1).upper() if match else None
 
+# --- REVISI POIN C: DETEKSI KATEGORI CEPAT ---
 def detect_category_basic(text):
+    # Tidak perlu text.lower() lagi karena regex sudah IGNORECASE
     best_cat, best_type, best_score = "❓ Lain-lain", None, 0
-    for (cat, typ), keywords in CATEGORIES_CONFIG.items():
-        score = 0
-        for kw in keywords:
-            if re.search(r'\b' + re.escape(kw) + r'\b', text): score += 1
+
+    for (cat, typ), pattern in CATEGORY_PATTERNS:
+        # findall jauh lebih cepat daripada loop keyword manual
+        matches = pattern.findall(text)
+        score = len(matches)
+
         if score > best_score:
             best_score, best_cat, best_type = score, cat, typ
 
     if best_score == 0:
-        if any(x in text.lower() for x in ["beli", "bayar", "jajan", "-"]):
-            best_type = "Pengeluaran 🔴" # Kamu tadi lupa isi typenya di sini
+        text_lower = text.lower()
+        if any(x in text_lower for x in ["beli", "bayar", "jajan", "-"]):
+            best_type = "Pengeluaran 🔴"
             best_cat = "❓ Lain-lain (Pengeluaran)"
-        elif any(x in text.lower() for x in ["terima", "dapat", "masuk", "+"]):
+        elif any(x in text_lower for x in ["terima", "dapat", "masuk", "+"]):
             best_type = "Pemasukan 🟢"
             best_cat = "❓ Lain-lain (Pemasukan)"
-        else: best_type = "Transfer 🔵"
+        else:
+            best_type = "Transfer 🔵"
+            best_cat = "🔄 Pindah Saldo"
+
     return best_cat, best_type
+
+def wallet_get_group(wallet_key):
+    if not wallet_key: return None
+    wk = wallet_key.lower()
+    for gname, wallets in WALLET_GROUPS.items():
+        if wk in wallets:
+            return gname
+    return None
 
 # ==========================================
 # 3. CORE ANALYZE
@@ -145,9 +202,10 @@ def detect_category_basic(text):
 @app.post("/analyze")
 async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_api_key)):
     text = request.text
+    text_lower = text.lower()
     nominal = get_nominal_smart(text)
     wallets = detect_wallets_ordered(text)
-    subject = extract_subject(text) # Mengambil #NAMA
+    subject = extract_subject(text)
     cat_name, cat_type = detect_category_basic(text)
 
     source, dest = None, None
@@ -155,7 +213,7 @@ async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_a
     # --- LOGIKA CORE DENGAN AKUN STATIS ---
 
     # 1. Kasus HUTANG & PIUTANG (Wajib #nama)
-    if "Hutang" in cat_type or "Piutang" in cat_type:
+    if "Hutang" in (cat_type or "") or "Piutang" in (cat_type or ""):
         if not subject:
             return {"success": False, "message": f"Gagal: Transaksi {cat_type} wajib mencantumkan #nama."}
         if not wallets:
@@ -173,12 +231,32 @@ async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_a
             source, dest = "PIUTANG", wallet_detect
 
     # 2. Kasus TRANSFER / INVESTASI (Wajib 2 Dompet Fisik)
-    elif cat_type == "Transfer 🔵" or any(x in text.lower() for x in ["pindah", "topup", "tarik"]):
+    elif cat_type == "Transfer 🔵":
         if len(wallets) >= 2:
-            source, dest = wallets[0].upper(), wallets[1].upper()
-            if dest.lower() in WALLET_GROUPS["INVESTMENT"]:
+            src_key, dst_key = wallets[0], wallets[1]
+            source, dest = src_key.upper(), dst_key.upper()
+
+            src_group = wallet_get_group(src_key)
+            dst_group = wallet_get_group(dst_key)
+
+            merchant_indicators = ["beli", "bayar", "jajan", "pakai", "checkout", "belanja"]
+
+            is_confident_transfer = (
+                cat_type == "Transfer 🔵"
+                or (
+                    any(x in text_lower for x in ["pindah", "topup", "tarik", "top up", "tf", "transfer"])
+                    and src_group == "LIQUID"
+                    and dst_group == "LIQUID"
+                    and not any(m in text_lower for m in merchant_indicators)
+                )
+            )
+
+            # Prioritaskan INVESTMENT jika tujuan termasuk INVESTMENT
+            if dst_group == "INVESTMENT":
                 cat_type = "Investasi 🟡"
-                cat_name = f"📈 Nabung ke {dest}"
+                cat_name = f"📈 Nabung ke {dst_key.upper()}"
+            elif is_confident_transfer:
+                cat_name = "🔄 Pindah Saldo"
         else:
             return {"success": False, "message": "Gagal: Transfer wajib menyebutkan 2 dompet."}
 
@@ -200,6 +278,9 @@ async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_a
     if not nominal:
         return {"success": False, "message": "Gagal: Nominal tidak ditemukan."}
 
+    if not source or not dest:
+        return {"success": False, "message": "Gagal: Source atau Destination tidak terdeteksi dengan benar."}
+
     return {
         "success": True,
         "message": f"{cat_type}: {cat_name} | Rp {nominal:,}",
@@ -208,9 +289,9 @@ async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_a
             "type": cat_type,
             "category": cat_name,
             "amount": nominal,
-            "subject": subject,      # Nama orang (Andi, Farkhan, dll)
-            "source_wallet": source, # HUTANG, PIUTANG, atau NAMA_BANK
-            "dest_wallet": dest,     # HUTANG, PIUTANG, atau NAMA_BANK
+            "subject": subject,
+            "source_wallet": source,
+            "dest_wallet": dest,
             "formatted": f"Rp {nominal:,}"
         }
     }
@@ -218,23 +299,7 @@ async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_a
 @app.get("/", response_class=HTMLResponse)
 def home():
     return """
-<html><head>
-            <title>AI Keuangan</title>
-            <style>
-                body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f4f4f9; }
-                .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
-                .badge { background: #3498db; color: white; padding: 5px 10px; border-radius: 15px; font-size: 0.8em; }
-            </style>
-        </head>
-    <body>
-        <div class="card">
-                <h1 style="color:green;"><span class="status-dot"></span> Webhook Ready</h1>
-                <p>AI Keuangan Service is running perfectly.</p>
-                <p>Endpoint URL: <span class="code">POST /analyze</span></p>
-                 <p>Testing URL: <span class="code">/docs</span></p>
-            </div>
-    </body>
-</html>
+<html><head><title>AI Keuangan v1.6.6</title></head><body><h1>AI Keuangan Service Optimized</h1></body></html>
     """
 
 if __name__ == "__main__":
