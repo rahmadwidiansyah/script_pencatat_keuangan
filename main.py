@@ -129,10 +129,12 @@ def detect_category_basic(text):
             best_score, best_cat, best_type = score, cat, typ
 
     if best_score == 0:
-        if any(x in text.lower() for x in ["beli", "bayar", "jajan", "-"]): best_type = "❓ Lain-lain (Pengeluaran)"
-        best_cat = "❓ Lain-lain (Pemasukan)"
-        elif any(x in text.lower() for x in ["terima", "dapat", "masuk", "+"]): best_type = "Pemasukan 🟢"
-        best_cat = "❓ Lain-lain (Pemasukan)"
+        if any(x in text.lower() for x in ["beli", "bayar", "jajan", "-"]):
+            best_type = "Pengeluaran 🔴" # Kamu tadi lupa isi typenya di sini
+            best_cat = "❓ Lain-lain (Pengeluaran)"
+        elif any(x in text.lower() for x in ["terima", "dapat", "masuk", "+"]):
+            best_type = "Pemasukan 🟢"
+            best_cat = "❓ Lain-lain (Pemasukan)"
         else: best_type = "Transfer 🔵"
     return best_cat, best_type
 
