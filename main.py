@@ -299,7 +299,40 @@ async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_a
 @app.get("/", response_class=HTMLResponse)
 def home():
     return """
-<html><head><title>AI Keuangan v1.6.6</title></head><body><h1>AI Keuangan Service Optimized</h1></body></html>
+
+    <html><head>
+
+                <title>AI Keuangan</title>
+
+                <style>
+
+                    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f4f4f9; }
+
+                    .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+
+                    .badge { background: #3498db; color: white; padding: 5px 10px; border-radius: 15px; font-size: 0.8em; }
+
+                </style>
+
+            </head>
+
+        <body>
+
+            <div class="card">
+
+                    <h1 style="color:green;"><span class="status-dot"></span> Webhook Ready</h1>
+
+                    <p>AI Keuangan Service is running perfectly.</p>
+
+                    <p>Endpoint URL: <span class="code">POST /analyze</span></p>
+
+                    <p>Testing URL: <span class="code">/docs</span></p>
+
+                </div>
+
+        </body>
+
+    </html>
     """
 
 if __name__ == "__main__":
