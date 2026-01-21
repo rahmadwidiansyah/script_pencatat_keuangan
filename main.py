@@ -122,13 +122,17 @@ def extract_subject(text):
 def detect_category_basic(text):
     best_cat, best_type, best_score = "❓ Lain-lain", None, 0
     for (cat, typ), keywords in CATEGORIES_CONFIG.items():
-        score = sum(1 for kw in keywords if kw in text.lower())
+        score = 0
+        for kw in keywords:
+            if re.search(r'\b' + re.escape(kw) + r'\b', text): score += 1
         if score > best_score:
             best_score, best_cat, best_type = score, cat, typ
 
     if best_score == 0:
-        if any(x in text.lower() for x in ["beli", "bayar", "jajan", "-"]): best_type = "Pengeluaran 🔴"
+        if any(x in text.lower() for x in ["beli", "bayar", "jajan", "-"]): best_type = "❓ Lain-lain (Pengeluaran)"
+        best_cat = "❓ Lain-lain (Pemasukan)"
         elif any(x in text.lower() for x in ["terima", "dapat", "masuk", "+"]): best_type = "Pemasukan 🟢"
+        best_cat = "❓ Lain-lain (Pemasukan)"
         else: best_type = "Transfer 🔵"
     return best_cat, best_type
 
