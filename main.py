@@ -54,7 +54,7 @@ CATEGORIES_CONFIG = {
     # --- HUTANG & PIUTANG (LOGIKA BARU) ---
     ("💸 Hutang (Masuk)", "Hutang (Masuk)"): ["pinjam uang", "hutang", "ngutang", "pinjem"],
     ("🧾 Cicil Hutang (Keluar)", "Cicil Hutang (Keluar)"): ["bayar hutang", "cicil hutang", "pelunasan hutang", "bayar utang"],
-    ("💰 Piutang (Keluar)", "Piutang (Keluar)"): ["pinjamin", "kasih pinjam", "piutang", "minjemin"],
+    ("💰 Piutang (Keluar)", "Piutang (Keluar)"): ["pinjamin", "kasih pinjam" , "minjemin"],
     ("📥 Piutang (Masuk)", "Piutang (Masuk)"): ["tagih", "bayar piutang", "terima piutang", "kembali uang", "balikin uang"],
 
     # --- PENGELUARAN ---
@@ -69,11 +69,11 @@ CATEGORIES_CONFIG = {
     ("💊 Kesehatan", "Pengeluaran 🔴"): ["dokter", "berobat", "konsul", "rs", "rumah sakit", "klinik", "puskesmas", "bidan", "obat", "apotek", "tebus obat", "vitamin", "suplemen", "madu", "tolak angin", "paracetamol", "panadol", "minyak kayu putih", "betadine", "hansaplast", "masker", "hand sanitizer", "check up", "gigi", "kacamata", "softlens", "bpjs", "asuransi", "premi", "prudential", "allianz", "manulife"],
     ("🎁 Sosial & Sedekah", "Pengeluaran 🔴"): ["sedekah", "infaq", "zakat", "donasi", "sumbangan", "kotak amal", "masjid", "gereja", "panti", "kado", "hadiah", "gift", "kenang-kenangan", "kondangan", "amplop", "nikahan", "jenguk", "besuk", "traktir", "kasih orang", "bagi bagi", "sawer", "hampers", "thr keponakan", "angpao"],
     ("🏨 Traveling & Liburan", "Pengeluaran 🔴"): ["liburan", "jalan-jalan", "jalan jalan", "healing", "wisata", "piknik", "hotel", "penginapan", "staycation", "villa", "airbnb", "reddoorz", "oyo", "tiket pesawat", "tiket kereta", "kai", "boarding", "travel", "sewa mobil", "rental", "bus antar kota", "paspor", "visa", "itinerary", "oleh-oleh", "souvenir"],
-    ("🎓 Pendidikan & Kuliah", "Pengeluaran 🔴"): ["ukt", "spp", "biaya semester", "registrasi", "daftar ulang", "uang pangkal", "gedung", "skripsi", "tesis", "disertasi", "sidang", "wisuda", "toga", "yudisium", "herregistrasi", "cuti akademik", "kursus", "bimbel", "sertifikasi", "pelatihan", "workshop", "seminar", "webinar", "bootcamp", "praktek", "magang", "internship", "lab", "perpustakaan", "fotocopy", "print", "jilid", "alat tulis", "atk", "buku pelajaran", "diktat", "modul", "e-book", "jurnal", "asrama", "kost", "uang saku"],
+    ("🎓 Pendidikan & Kuliah", "Pengeluaran 🔴"): ["ukt", "spp", "biaya semester", "registrasi", "daftar ulang", "uang pangkal", "gedung", "skripsi", "tesis", "disertasi", "sidang", "wisuda", "toga", "yudisium", "herregistrasi", "cuti akademik", "kursus", "bimbel", "sertifikasi", "pelatihan", "workshop", "seminar", "webinar", "bootcamp", "praktek", "magang", "internship", "lab", "perpustakaan", "fotocopy", "print", "jilid", "alat tulis", "atk", "buku pelajaran", "diktat", "modul", "e-book", "jurnal", "asrama", "bayar kuliah", "kuliah" "uang saku"],
     ("🏠 Biaya Kost & Sewa", "Pengeluaran 🔴"): ["bayar kos", "kost", "kostan", "kosan", "sewa kamar", "kontrakan", "sewa rumah", "deposit", "iuran sampah", "iuran keamanan", "parkir kos"],
     ("💸 Admin & Pajak", "Pengeluaran 🔴"): ["biaya admin", "admin bank", "pajak", "pajak stnk", "pajak motor", "pajak mobil", "pbb", "meterai", "biaya layanan", "layanan aplikasi"],
     ("❤️ Transfer Muna", "Pengeluaran 🔴"): ["pacar", "muna", "MUNA"],
-    ("💳 Cicilan & Paylater", "Pengeluaran 🔴"): ["cicilan", "angsuran", "kredit", "dp", "pelunasan", "tagihan", "paylater", "spaylater", "gopaylater", "kredivo", "akulaku", "home credit", "kartu kredit", "cc", "bunga cicilan", "denda", "pinjol", "hutang"],
+    ("💳 Cicilan & Paylater", "Pengeluaran 🔴"): ["cicilan", "angsuran", "kredit", "dp", "pelunasan", "tagihan", "paylater", "spaylater", "gopaylater", "kredivo", "akulaku", "home credit", "kartu kredit", "cc", "bunga cicilan", "denda", "pinjol"],
     ("🛵 Operasional Kerja", "Pengeluaran 🔴"): ["bensin ngojol", "atribut", "helm", "jaket ojol"],
 
     # --- PEMASUKAN (INCOME) ---
@@ -82,7 +82,7 @@ CATEGORIES_CONFIG = {
     ("🛎️ Kiriman/TF Masuk", "Pemasukan 🟢"): ["kiriman", "orangtua", "ortu", "dapat transfer", "terima transfer", "dikirim uang", "uang masuk", "dikasih", "hadiah uang", "tombokan"],
 
     # --- NETRAL (Hapus Investasi dari sini karena sudah jadi Wallet) ---
-    ("🔄 Pindah Saldo", "Transfer 🔵"): ["pindah", "topup", "top up", "isi saldo", "tarik", "transfer", "tf", "kirim", "nabung", "simpan", "deposit", "withdraw", "wd", "jual"]
+    ("🔄 Pindah Saldo", "Transfer 🔵"): ["pindah", "topup", "top up", "isi saldo", "tarik", "transfer", "tf", "kirim", "simpan", "deposit", "withdraw", "wd"]
 }
 
 # --- OPTIMASI C: PRECOMPILE CATEGORY REGEX ---
