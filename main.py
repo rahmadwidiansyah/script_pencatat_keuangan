@@ -52,7 +52,7 @@ for group_name, wallets in WALLET_GROUPS.items():
 
 CATEGORIES_CONFIG = {
     # --- HUTANG & PIUTANG (LOGIKA BARU) ---
-    ("💸 Hutang (Masuk)", "Hutang (Masuk)"): ["pinjam uang", "hutang", "ngutang", "pinjem"],
+    ("💸 Hutang (Masuk)", "Hutang (Masuk)"): ["pinjam uang", "ngutang", "pinjem"],
     ("🧾 Cicil Hutang (Keluar)", "Cicil Hutang (Keluar)"): ["bayar hutang", "cicil hutang", "pelunasan hutang", "bayar utang"],
     ("💰 Piutang (Keluar)", "Piutang (Keluar)"): ["pinjamin", "kasih pinjam" , "minjemin"],
     ("📥 Piutang (Masuk)", "Piutang (Masuk)"): ["tagih", "bayar piutang", "terima piutang", "kembali uang", "balikin uang"],
