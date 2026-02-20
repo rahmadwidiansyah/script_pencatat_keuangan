@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="AI Keuangan Pro v1.6.6")
+app = FastAPI(title="AI Keuangan Pro")
 
 # --- API KEY CONFIG ---
 API_KEY_NAME = "X-API-KEY"
@@ -203,6 +203,37 @@ def wallet_get_group(wallet_key):
 async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_api_key)):
     text = request.text
     text_lower = text.lower()
+
+    # --- FITUR BARU: DETEKSI HAPUS (DELETE INTENT) ---
+    # --- FITUR BARU: DETEKSI HAPUS (DELETE INTENT) ---
+    delete_keywords = ["hapus", "delete", "batal", "cancel", "undo"]
+    if any(kw in text_lower for kw in delete_keywords):
+        # 1. Cek jika ada ID spesifik (angka)
+        id_match = re.search(r'\b(\d+)\b', text_lower)
+
+        # 2. Cek jika ada indikasi "terakhir"
+        is_last = any(x in text_lower for x in ["terakhir", "last", "tadi", "barusan"])
+
+        # JALUR A: Hapus berdasarkan ID
+        if id_match:
+            return {
+                "success": True,
+                "intent": "delete transaction",
+                "id": id_match.group(1),
+                "message": f"🗑️ Menghapus transaksi ID: {id_match.group(1)}."
+            }
+
+        # JALUR B: Hapus transaksi terakhir
+        if is_last or text_lower in delete_keywords: # Jika cuma ketik "hapus" tanpa angka, asumsikan hapus terakhir
+            return {
+                "success": True,
+                "intent": "delete last",
+                "message": "🗑️ Menghapus transaksi terakhir kamu."
+            }
+
+
+
+    # --- Transaksi Normal
     nominal = get_nominal_smart(text)
     wallets = detect_wallets_ordered(text)
     subject = extract_subject(text)
@@ -283,6 +314,7 @@ async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_a
 
     return {
         "success": True,
+        "intent": "add transaction",
         "message": f"{cat_type}: {cat_name} | Rp {nominal:,}",
         "data": {
             "original_text": text,
