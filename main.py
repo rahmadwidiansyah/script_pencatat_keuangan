@@ -6,6 +6,7 @@ from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 import uvicorn
 from dotenv import load_dotenv
+from rapidfuzz import process, fuzz
 
 load_dotenv()
 
@@ -30,16 +31,16 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 
 WALLET_GROUPS = {
     "LIQUID": {
-        "shopeepay": ["shopeepay", "spay"], # Hapus titik di depan agar regex boundary bekerja
-        "seabank":   ["seabank", "sea bank"],
+        "shopeepay": ["shopeepay", "spay", "sopipay", "sopipey"], # Hapus titik di depan agar regex boundary bekerja
+        "seabank":   ["seabank", "sea bank", "sibank", "sibang", "sebank", "saebank", "sebang", "saebang"],
         "dana":      ["dana"],
-        "gopay":     ["gopay", "gojek"],
+        "gopay":     ["gopay", "gojek", "go-pay", "go-jek"],
         "cash":      ["cash", "dompet", "tunai", "uang cash"],
-        "market pulsa": ["mcp", "saldo market", "marketpulsa"]
+        "market pulsa": ["mcp", "marketpulsa",]
     },
     "INVESTMENT": {
         "emas":      ["emas", "tabungan emas", "pegadaian", "logam mulia"],
-        "tabungan":  ["tabungan", "nabung", "rekening"] # Tambah bank umum
+        "tabungan":  ["tabungan", "nabung"] # Tambah bank umum
     }
 }
 
@@ -65,11 +66,11 @@ CATEGORIES_CONFIG = {
     ("🛒 Groceries & Stok Dapur", "Pengeluaran 🔴"): ["belanja pasar", "mentah", "sayuran", "sayur mentah", "ayam mentah", "daging", "ikan mentah", "telur", "beras", "minyak goreng", "bumbu", "bawang", "cabai", "garam", "gula", "terigu", "saus", "kecap", "santan", "mentega", "bahan kue", "frozen food", "nugget", "sosis", "air galon", "aqua galon", "vit galon", "le minerale", "gas elpiji", "lpg", "pasar", "indomaret", "alfamart", "supermarket", "hypermart", "superindo"],
     ("🛠️ Servis & Barang Hobby", "Pengeluaran 🔴"): ["servis hp", "servis laptop", "perbaikan", "elektronik", "peralatan", "furniture", "meja", "kursi", "hobi", "mainan", "koleksi", "onderdil", "alat pertukangan", "hardware"],
     ("📱 Data & Digital", "Pengeluaran 🔴"): ["pulsa", "kuota", "paket data", "telkomsel", "indosat", "xl", "tri", "axis", "wifi", "internet", "indihome", "biznet", "first media", "myrepublic", "iconnet", "netflix", "spotify", "youtube", "premium", "disney", "vidio", "wetv", "icloud", "google drive", "zoom", "langganan", "subscribe", "aplikasi", "game", "steam", "voucher game", "diamond", "topup game"],
-    ("🛍️ Belanja & Fashion", "Pengeluaran 🔴"): ["baju", "celana", "kaos", "kemeja", "sepatu", "sandal", "tas", "dompet", "jaket", "hoodie", "kerudung", "jilbab", "outfit", "batik", "skincare", "makeup", "facial", "potong rambut", "cukur", "barbershop", "salon", "parfum", "deodorant", "sabun mandi", "shampo", "odol", "sikat gigi", "body wash", "tokopedia", "shopee", "lazada", "tiktok shop", "belanja", "checkout"],
+    ("🛍️ Belanja & Fashion", "Pengeluaran 🔴"): ["baju", "celana", "kaos", "kemeja", "sepatu", "sandal", "tas", "dompet", "jaket", "hoodie", "kerudung", "jilbab", "outfit", "batik", "skincare", "makeup", "facial", "potong rambut", "cukur", "barbershop", "salon", "parfum", "deodorant", "sabun", "shampo", "odol", "sikat gigi", "body wash", "tokopedia", "shopee", "lazada", "tiktok shop", "belanja", "checkout"],
     ("💊 Kesehatan", "Pengeluaran 🔴"): ["dokter", "berobat", "konsul", "rs", "rumah sakit", "klinik", "puskesmas", "bidan", "obat", "apotek", "tebus obat", "vitamin", "suplemen", "madu", "tolak angin", "paracetamol", "panadol", "minyak kayu putih", "betadine", "hansaplast", "masker", "hand sanitizer", "check up", "gigi", "kacamata", "softlens", "bpjs", "asuransi", "premi", "prudential", "allianz", "manulife"],
     ("🎁 Sosial & Sedekah", "Pengeluaran 🔴"): ["sedekah", "infaq", "zakat", "donasi", "sumbangan", "kotak amal", "masjid", "gereja", "panti", "kado", "hadiah", "gift", "kenang-kenangan", "kondangan", "amplop", "nikahan", "jenguk", "besuk", "traktir", "kasih orang", "bagi bagi", "sawer", "hampers", "thr keponakan", "angpao"],
     ("🏨 Traveling & Liburan", "Pengeluaran 🔴"): ["liburan", "jalan-jalan", "jalan jalan", "healing", "wisata", "piknik", "hotel", "penginapan", "staycation", "villa", "airbnb", "reddoorz", "oyo", "tiket pesawat", "tiket kereta", "kai", "boarding", "travel", "sewa mobil", "rental", "bus antar kota", "paspor", "visa", "itinerary", "oleh-oleh", "souvenir"],
-    ("🎓 Pendidikan & Kuliah", "Pengeluaran 🔴"): ["ukt", "spp", "biaya semester", "registrasi", "daftar ulang", "uang pangkal", "gedung", "skripsi", "tesis", "disertasi", "sidang", "wisuda", "toga", "yudisium", "herregistrasi", "cuti akademik", "kursus", "bimbel", "sertifikasi", "pelatihan", "workshop", "seminar", "webinar", "bootcamp", "praktek", "magang", "internship", "lab", "perpustakaan", "fotocopy", "print", "jilid", "alat tulis", "atk", "buku pelajaran", "diktat", "modul", "e-book", "jurnal", "asrama", "bayar kuliah", "kuliah" "uang saku"],
+    ("🎓 Pendidikan & Kuliah", "Pengeluaran 🔴"): ["ukt", "spp", "biaya semester", "registrasi", "daftar ulang", "uang pangkal", "gedung", "skripsi", "tesis", "disertasi", "sidang", "wisuda", "toga", "yudisium", "herregistrasi", "cuti akademik", "kursus", "bimbel", "sertifikasi", "pelatihan", "workshop", "seminar", "webinar", "bootcamp", "praktek", "magang", "internship", "lab", "perpustakaan", "fotocopy", "print", "jilid", "alat tulis", "atk", "buku pelajaran", "diktat", "modul", "e-book", "jurnal", "asrama", "bayar kuliah", "kuliah"],
     ("🏠 Biaya Kost & Sewa", "Pengeluaran 🔴"): ["bayar kos", "kost", "kostan", "kosan", "sewa kamar", "kontrakan", "sewa rumah", "deposit", "iuran sampah", "iuran keamanan", "parkir kos"],
     ("💸 Admin & Pajak", "Pengeluaran 🔴"): ["biaya admin", "admin bank", "pajak", "pajak stnk", "pajak motor", "pajak mobil", "pbb", "meterai", "biaya layanan", "layanan aplikasi"],
     ("❤️ Transfer Muna", "Pengeluaran 🔴"): ["pacar", "muna", "MUNA"],
@@ -79,7 +80,7 @@ CATEGORIES_CONFIG = {
     # --- PEMASUKAN (INCOME) ---
     ("💼 Pendapatan Tetap", "Pemasukan 🟢"): ["gaji", "gajian", "salary", "payroll", "upah", "honor", "tunjangan", "thr", "bonus tahunan", "insentif", "rapel", "pesangon"],
     ("🛵 Side Job/Tambahan", "Pemasukan 🟢"): ["ngojek", "nyopi", "ngojol", "sampingan", "proyek", "freelance", "side job", "ceperan", "jualan", "dagang", "laku", "profit", "untung", "laba", "komisi", "affiliate", "adsense", "konten", "jasa", "tip", "tips", "reward", "cashback", "refund", "reimburse"],
-    ("🛎️ Kiriman/TF Masuk", "Pemasukan 🟢"): ["kiriman", "orangtua", "ortu", "dapat transfer", "terima transfer", "dikirim uang", "uang masuk", "dikasih", "hadiah uang", "tombokan"],
+    ("🛎️ Kiriman/TF Masuk", "Pemasukan 🟢"): ["kiriman", "orangtua", "ortu", "dapat transfer", "terima transfer", "dikirim uang", "uang", "dikasih", "hadiah uang", "tombokan"],
 
     # --- NETRAL (Hapus Investasi dari sini karena sudah jadi Wallet) ---
     ("🔄 Pindah Saldo", "Transfer 🔵"): ["pindah", "topup", "top up", "isi saldo", "tarik", "transfer", "tf", "kirim", "simpan", "deposit", "withdraw", "wd"]
@@ -195,6 +196,7 @@ def wallet_get_group(wallet_key):
             return gname
     return None
 
+
 # ==========================================
 # 3. CORE ANALYZE
 # ==========================================
@@ -204,7 +206,6 @@ async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_a
     text = request.text
     text_lower = text.lower()
 
-    # --- FITUR BARU: DETEKSI HAPUS (DELETE INTENT) ---
     # --- FITUR BARU: DETEKSI HAPUS (DELETE INTENT) ---
     delete_keywords = ["hapus", "delete", "batal", "cancel", "undo"]
     if any(kw in text_lower for kw in delete_keywords):
