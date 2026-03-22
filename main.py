@@ -375,6 +375,7 @@ def home():
                     <p>Endpoint URL: <span class="code">POST /analyze</span></p>
 
                     <p>Testing URL: <span class="code">/docs</span></p>
+                    <p>Refresh: <span class="code">/refresh-keywords</span></p>
 
                 </div>
 
