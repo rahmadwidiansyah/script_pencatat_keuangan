@@ -4,3 +4,4 @@ pydantic
 python-dotenv
 thefuzz
 python-Levenshtein
+asyncpg
