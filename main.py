@@ -1,388 +1,190 @@
-import re
-import os
-import asyncpg
 from fastapi import FastAPI, HTTPException, Security, Depends
-from fastapi.responses import HTMLResponse
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
+from typing import List, Optional
+import re
 import uvicorn
-from dotenv import load_dotenv
-from contextlib import asynccontextmanager
+from thefuzz import process, fuzz
 
-load_dotenv()
+app = FastAPI()
+API_KEY = "kunci-rahasia-v4"
+api_key_header = APIKeyHeader(name="X-API-KEY")
 
-# --- VARIABEL GLOBAL UNTUK CACHE MEMORI ---
-WALLET_GROUPS = {}
-KEYWORD_TO_WALLET = {}
-CATEGORIES_CONFIG = {}
-ALL_KEYWORDS = []
-CATEGORY_PATTERNS = []
+class ItemData(BaseModel):
+    id: int
+    name: str
+    type_id: Optional[int] = None
+    group_type: Optional[str] = None
+    keyword: Optional[str] = None
 
-# Variabel Default (Fallback)
-DEFAULT_EXPENSE = ("❓ Lain-lain (Pengeluaran)", "Pengeluaran 🔴")
-DEFAULT_INCOME = ("❓ Lain-lain (Pemasukan)", "Pemasukan 🟢")
-DEFAULT_TRANSFER = ("🔄 Pindah Saldo", "Transfer 🔵")
+class SysMap(BaseModel):
+    merchant_id: Optional[int] = None
+    external_id: Optional[int] = None
+    hutang_id: Optional[int] = None
+    piutang_id: Optional[int] = None
 
-# Konfigurasi Fuzzy
-MIN_LEN = 4
-MIN_SCORE = 85
-LEN_TOLERANCE = 2
+class TypeMap(BaseModel):
+    income_ids: List[int] = []
+    expense_ids: List[int] = []
+    transfer_ids: List[int] = []
 
-# --- FUNGSI LOAD DATABASE ---
-async def load_data_from_db():
-    global WALLET_GROUPS, KEYWORD_TO_WALLET, CATEGORIES_CONFIG
-    global ALL_KEYWORDS, CATEGORY_PATTERNS
-    global DEFAULT_EXPENSE, DEFAULT_INCOME, DEFAULT_TRANSFER
+class CatMap(BaseModel):
+    hutang_ids: List[int] = []
+    piutang_ids: List[int] = []
 
-    print("🔄 Memuat ulang data dari PostgreSQL...")
-
-    # Koneksi ke DB
-    conn = await asyncpg.connect(
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASS"),
-        database=os.getenv("DB_NAME"),
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT", "5432")
-    )
-
-    try:
-        # 1. Reset Variabel
-        WALLET_GROUPS.clear()
-        KEYWORD_TO_WALLET.clear()
-        CATEGORIES_CONFIG.clear()
-        ALL_KEYWORDS.clear()
-        CATEGORY_PATTERNS.clear()
-
-        # 2. Ambil Data Accounts (Wallets)
-        accounts = await conn.fetch("SELECT nama, group_type, keywords FROM accounts WHERE keywords IS NOT NULL")
-        for acc in accounts:
-            grp = acc['group_type'] or "GENERAL"
-            wallet_key = acc['nama'].lower() # Misal "seabank"
-            kws = acc['keywords']
-
-            if grp not in WALLET_GROUPS:
-                WALLET_GROUPS[grp] = {}
-            WALLET_GROUPS[grp][wallet_key] = kws
-
-            for kw in kws:
-                KEYWORD_TO_WALLET[kw.lower()] = wallet_key
-                ALL_KEYWORDS.append(kw.lower())
-
-        # 3. Ambil Data Kategori
-        categories = await conn.fetch("SELECT nama, jenis, keywords, is_default_expense, is_default_income, is_default_transfer FROM categories")
-        for cat in categories:
-            cat_tuple = (cat['nama'], cat['jenis'])
-            kws = cat['keywords'] or []
-
-            if kws:
-                CATEGORIES_CONFIG[cat_tuple] = kws
-                for kw in kws:
-                    ALL_KEYWORDS.append(kw.lower())
-
-            # Set Default Fallback jika dicentang di DB
-            if cat['is_default_expense']: DEFAULT_EXPENSE = cat_tuple
-            if cat['is_default_income']: DEFAULT_INCOME = cat_tuple
-            if cat['is_default_transfer']: DEFAULT_TRANSFER = cat_tuple
-
-        # 4. Normalisasi ALL_KEYWORDS & Compile Regex
-        ALL_KEYWORDS = list(set(ALL_KEYWORDS))
-
-        for (cat, typ), keywords in CATEGORIES_CONFIG.items():
-            keywords.sort(key=len, reverse=True)
-            escaped = [re.escape(k) for k in keywords]
-            pattern = re.compile(r'\b(?:' + "|".join(escaped) + r')\b', re.IGNORECASE)
-            CATEGORY_PATTERNS.append(((cat, typ), pattern))
-
-        print("✅ Data berhasil dimuat!")
-
-    finally:
-        await conn.close()
-
-# --- LIFESPAN (Jalan Otomatis Saat Start) ---
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    await load_data_from_db() # Load awal
-    yield
-    # Cleanup kalau server mati (jika ada)
-
-app = FastAPI(title="AI Keuangan Pro", lifespan=lifespan)
-
-# --- API KEY CONFIG ---
-API_KEY_NAME = "X-API-KEY"
-API_KEY = os.getenv("API_KEY_SECRET", "kunci-rahasia-default")
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
-
-class ChatRequest(BaseModel):
+class AnalyzeRequest(BaseModel):
     text: str
-
-async def get_api_key(api_key_header: str = Security(api_key_header)):
-    if api_key_header == API_KEY:
-        return api_key_header
-    raise HTTPException(status_code=403, detail="Akses Ditolak")
-
-# ==========================================
-# ENDPOINT REFRESH (Panggil ini kalau update DB)
-# ==========================================
-@app.post("/refresh-keywords")
-async def refresh_keywords(api_key: str = Depends(get_api_key)):
-    try:
-        await load_data_from_db()
-        return {"success": True, "message": "Database berhasil disinkronisasi ulang ke memori."}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==========================================
-# LOGIC FUNCTIONS (Pindahkan kode get_nominal_smart, detect_wallets_ordered, fix_typo_vn kamu ke sini)
-# ==========================================
+    wallets: List[ItemData]
+    categories: List[ItemData]
+    sys_map: SysMap
+    type_map: TypeMap
+    cat_map: CatMap
 
 def get_nominal_smart(text):
     text_lower = text.lower()
     match_suffix = re.search(r'(\d+[.,]?\d*)\s*(rb|ribu|k|jt|juta)\b', text_lower)
-
     if match_suffix:
-        angka_str = match_suffix.group(1).replace(",", ".")
+        angka = float(match_suffix.group(1).replace(",", "."))
         suffix = match_suffix.group(2)
-        try:
-            angka = float(angka_str)
-            if suffix in ['rb', 'ribu', 'k']: return int(angka * 1000)
-            elif suffix in ['jt', 'juta']: return int(angka * 1000000)
-        except ValueError:
-            pass
+        if suffix in ['rb', 'ribu', 'k']: return int(angka * 1000)
+        elif suffix in ['jt', 'juta']: return int(angka * 1000000)
 
-    clean_text = text_lower.replace(".", "").replace(",", "")
-    all_numbers = re.findall(r'\b\d+\b', clean_text)
-    valid_numbers = [int(n) for n in all_numbers if int(n) >= 1000]
-    return max(valid_numbers) if valid_numbers else None
-
-
-def detect_wallets_ordered(text_lower):
-    matches = []
-    for kw, wallet_key in KEYWORD_TO_WALLET.items():
-        pattern = r'\b' + re.escape(kw) + r'\b'
-        for m in re.finditer(pattern, text_lower):
-            matches.append((m.start(), wallet_key))
-
-    matches.sort(key=lambda x: x[0])
-    ordered = []
-    seen = set()
-    for _, w in matches:
-        if w not in seen:
-            ordered.append(w)
-            seen.add(w)
-    return ordered
-
+    nums = re.findall(r'\b\d+\b', text_lower.replace(".", "").replace(",", ""))
+    valid = [int(n) for n in nums if int(n) >= 1000]
+    return max(valid) if valid else None
 
 def extract_subject(text):
     match = re.search(r'#([a-zA-Z0-9_]+)', text)
-    return match.group(1).upper() if match else None
-
-
-def detect_category_basic(text_lower):
-    best_cat, best_type = DEFAULT_EXPENSE
-    best_score = 0
-
-    # 1. Cari kategori spesifik dari regex yang sudah di-compile
-    for (cat, typ), pattern in CATEGORY_PATTERNS:
-        matches = pattern.findall(text_lower)
-        score = len(matches)
-        if score > best_score:
-            best_score, best_cat, best_type = score, cat, typ
-
-    # 2. Logika Fallback (Jika tidak ada kategori yang cocok)
-    if best_score == 0:
-        # Ambil keyword pemicu langsung dari variabel memori yang bersumber dari DB
-        kw_expense = CATEGORIES_CONFIG.get(DEFAULT_EXPENSE, [])
-        kw_income = CATEGORIES_CONFIG.get(DEFAULT_INCOME, [])
-
-        if any(x in text_lower for x in kw_expense):
-            best_cat, best_type = DEFAULT_EXPENSE
-        elif any(x in text_lower for x in kw_income):
-            best_cat, best_type = DEFAULT_INCOME
-        else:
-            best_cat, best_type = DEFAULT_TRANSFER
-
-    return best_cat, best_type
-
-
-def wallet_get_group(wallet_key):
-    if not wallet_key: return None
-    wk = wallet_key.lower()
-    for gname, wallets in WALLET_GROUPS.items():
-        if wk in wallets:
-            return gname
-    return None
-
-# ==========================================
-# CORE ANALYZE
-# ==========================================
+    return match.group(1) if match else "Pihak Terkait"
 
 @app.post("/analyze")
-async def analyze_transaction(request: ChatRequest, api_key: str = Depends(get_api_key)):
-    text = request.text
-    text_lower = text.lower()
+async def analyze_transaction(req: AnalyzeRequest, key: str = Depends(api_key_header)):
+    if key != API_KEY: raise HTTPException(status_code=403)
+    
+    text_lower = req.text.lower()
+    nominal = get_nominal_smart(req.text)
+    subject = extract_subject(req.text)
 
-    # --- FITUR BARU: DETEKSI HAPUS (DELETE INTENT) ---
-    delete_keywords = ["hapus", "delete", "batal", "cancel", "undo"]
-    if any(kw in text_lower for kw in delete_keywords):
-        # 1. Cek jika ada ID spesifik (angka)
-        id_match = re.search(r'\b(\d+)\b', text_lower)
+    # =========================================================================
+    # 1. DETEKSI DOMPET (Regex + Jaring Pengaman Fuzzy Tingkat Tinggi)
+    # =========================================================================
+    matches = []
+    for w in req.wallets:
+        # BUG FIX: Cegah keyword strip ('-') atau kosong bikin deteksi buta huruf
+        raw_kws = w.keyword if (w.keyword and w.keyword.strip() not in ['-', '']) else w.name
+        kws = [k.strip().lower() for k in raw_kws.split(',')]
+        
+        found = False
+        for kw in kws:
+            if not kw: continue
+            for m in re.finditer(r'\b' + re.escape(kw) + r'\b', text_lower):
+                matches.append((m.start(), w))
+                found = True
+        
+        # JARING PENGAMAN: Kalau regex gagal, kita paksa scan dompet fisik pakai Fuzzy
+        if not found and w.group_type in ['Asset', 'Liquid']:
+            match = process.extractOne(text_lower, kws, scorer=fuzz.token_set_ratio)
+            if match and match[1] >= 85: # Tingkat kemiripan 85% ke atas
+                matches.append((999, w)) # Beri index akhir agar dompet regex tetap diutamakan
 
-        # 2. Cek jika ada indikasi "terakhir"
-        is_last = any(x in text_lower for x in ["terakhir", "last", "tadi", "barusan"])
+    matches.sort(key=lambda x: x[0])
+    ordered_wallets = []
+    seen = set()
+    for _, w in matches:
+        if w.id not in seen:
+            ordered_wallets.append(w)
+            seen.add(w.id)
 
-        # JALUR A: Hapus berdasarkan ID
-        if id_match:
-            return {
-                "success": True,
-                "intent": "delete transaction",
-                "id": id_match.group(1),
-                "message": f"🗑️ Menghapus transaksi ID: {id_match.group(1)}."
-            }
+    # =========================================================================
+    # 2. DETEKSI KATEGORI
+    # =========================================================================
+    best_cat = None
+    best_cat_score = 0
+    for c in req.categories:
+        raw_kws = c.keyword if (c.keyword and c.keyword.strip() not in ['-', '']) else c.name
+        kws = [k.strip().lower() for k in raw_kws.split(',')]
+        
+        escaped = [re.escape(k) for k in kws if k]
+        if escaped:
+            pattern = re.compile(r'\b(?:' + "|".join(escaped) + r')\b', re.IGNORECASE)
+            m = pattern.findall(text_lower)
+            if m:
+                score = len(m) * 100
+                if score > best_cat_score:
+                    best_cat_score, best_cat = score, c
+        
+        if best_cat_score == 0:
+            match = process.extractOne(text_lower, kws, scorer=fuzz.token_set_ratio)
+            if match and match[1] > best_cat_score:
+                best_cat_score, best_cat = match[1], c
 
-        # JALUR B: Hapus transaksi terakhir
-        if is_last or text_lower in delete_keywords: # Jika cuma ketik "hapus" tanpa angka, asumsikan hapus terakhir
-            return {
-                "success": True,
-                "intent": "delete last",
-                "message": "🗑️ Menghapus transaksi terakhir kamu."
-            }
+    if best_cat_score < 60:
+        best_cat = None
 
+    # =========================================================================
+    # 3. MAPPING SYSTEM WALLET (Kombinasi Peta Laravel + Backup Tebakan Python)
+    # =========================================================================
+    merch_id = req.sys_map.merchant_id or next((w.id for w in req.wallets if w.group_type == 'System' and any(x in w.name.lower() for x in ['merchant', 'pengeluaran', 'keluar', 'belanja', 'toko'])), None)
+    ext_id = req.sys_map.external_id or next((w.id for w in req.wallets if w.group_type == 'System' and any(x in w.name.lower() for x in ['external', 'pemasukan', 'masuk', 'income', 'luar'])), None)
+    hut_id = req.sys_map.hutang_id or next((w.id for w in req.wallets if w.group_type == 'System' and 'hutang' in w.name.lower()), None)
+    piu_id = req.sys_map.piutang_id or next((w.id for w in req.wallets if w.group_type == 'System' and 'piutang' in w.name.lower()), None)
 
+    # =========================================================================
+    # 4. RUTING OTOMATIS (Bebas Hardcode)
+    # =========================================================================
+    source_id, dest_id = None, None
+    type_id = best_cat.type_id if best_cat else None
 
-    # --- Transaksi Normal
-    nominal = get_nominal_smart(text)
-    wallets = detect_wallets_ordered(text_lower)
-    subject = extract_subject(text)
-    cat_name, cat_type = detect_category_basic(text_lower)
+    # Backup logic jika Laravel gagal map tipe (misal karena nama Tipenya "Mutasi")
+    is_transfer = (type_id in req.type_map.transfer_ids) or (best_cat and any(x in best_cat.name.lower() for x in ['transfer', 'pindah', 'mutasi']))
+    is_income = (type_id in req.type_map.income_ids) or (best_cat and any(x in best_cat.name.lower() for x in ['pemasukan', 'gaji', 'bonus', 'masuk']))
 
-    source, dest = None, None
+    if best_cat:
+        wallet_1 = ordered_wallets[0].id if len(ordered_wallets) > 0 else None
+        wallet_2 = ordered_wallets[1].id if len(ordered_wallets) > 1 else None
 
-    # --- LOGIKA CORE DENGAN AKUN STATIS ---
+        cat_name = best_cat.name.lower()
 
-    # 1. Kasus HUTANG & PIUTANG (Wajib #nama)
-    if "Hutang" in (cat_type or "") or "Piutang" in (cat_type or ""):
-        if not subject:
-            return {"success": False, "message": f"Gagal: Transaksi {cat_type} wajib mencantumkan #nama."}
-        if not wallets:
-            return {"success": False, "message": f"Gagal: Wajib menyebutkan dompet (BCA, Gopay, dll)."}
+        # A. Logika Hutang 
+        if best_cat.id in req.cat_map.hutang_ids or 'hutang' in cat_name:
+            if any(w in text_lower for w in ["bayar", "cicil", "lunas"]):
+                source_id, dest_id = wallet_1, hut_id
+            else: 
+                source_id, dest_id = hut_id, wallet_1
+                
+        # B. Logika Piutang 
+        elif best_cat.id in req.cat_map.piutang_ids or 'piutang' in cat_name:
+            if any(w in text_lower for w in ["bayar", "terima", "lunas", "dapat", "nagih"]):
+                source_id, dest_id = piu_id, wallet_1
+            else: 
+                source_id, dest_id = wallet_1, piu_id
 
-        wallet_detect = wallets[0].upper()
-
-        if cat_type == "Hutang (Masuk)":
-            source, dest = "HUTANG", wallet_detect
-        elif cat_type == "Cicil Hutang (Keluar)":
-            source, dest = wallet_detect, "HUTANG"
-        elif cat_type == "Piutang (Keluar)":
-            source, dest = wallet_detect, "PIUTANG"
-        elif cat_type == "Piutang (Masuk)":
-            source, dest = "PIUTANG", wallet_detect
-
-    # 2. Kasus TRANSFER / INVESTASI (Wajib 2 Dompet Fisik)
-    elif cat_type == "Transfer 🔵":
-        if len(wallets) >= 2:
-            src_key, dst_key = wallets[0], wallets[1]
-            source, dest = src_key.upper(), dst_key.upper()
-
-            src_group = wallet_get_group(src_key)
-            dst_group = wallet_get_group(dst_key)
-
-            merchant_indicators = ["beli", "bayar", "jajan", "pakai", "checkout", "belanja"]
-
-            is_confident_transfer = (
-                cat_type == "Transfer 🔵"
-                or (
-                    any(x in text_lower for x in ["pindah", "topup", "tarik", "top up", "tf", "transfer"])
-                    and src_group == "LIQUID"
-                    and dst_group == "LIQUID"
-                    and not any(m in text_lower for m in merchant_indicators)
-                )
-            )
-
-            # Prioritaskan INVESTMENT jika tujuan termasuk INVESTMENT
-            if dst_group == "INVESTMENT":
-                cat_type = "Investasi 🟡"
-                cat_name = f"📈 Nabung ke {dst_key.upper()}"
-            elif is_confident_transfer:
-                cat_name = "🔄 Pindah Saldo"
+        # C. Logika Transfer (Butuh 2 dompet)
+        elif is_transfer or len(ordered_wallets) >= 2:
+            source_id = wallet_1
+            dest_id = wallet_2
+            
+        # D. Logika Pemasukan
+        elif is_income:
+            source_id, dest_id = ext_id, wallet_1
+            
+        # E. Logika Pengeluaran
         else:
-            return {"success": False, "message": "Gagal: Transfer wajib menyebutkan 2 dompet."}
+            source_id, dest_id = wallet_1, merch_id
 
-    # 3. Kasus PEMASUKAN UMUM (Gaji, dll)
-    elif cat_type == "Pemasukan 🟢":
-        if wallets:
-            source, dest = "EKSTERNAL", wallets[0].upper()
-        else:
-            return {"success": False, "message": "Gagal: Pemasukan wajib menyebutkan dompet tujuan."}
-
-    # 4. Kasus PENGELUARAN UMUM (Makan, dll)
-    elif cat_type == "Pengeluaran 🔴":
-        if wallets:
-            source, dest = wallets[0].upper(), "MERCHANT"
-        else:
-            return {"success": False, "message": "Gagal: Pengeluaran wajib menyebutkan dompet asal."}
-
-    # --- VALIDASI AKHIR ---
-    if not nominal:
-        return {"success": False, "message": "Gagal: Nominal tidak ditemukan."}
-
-    if not source or not dest:
-        return {"success": False, "message": "Gagal: Source atau Destination tidak terdeteksi dengan benar."}
+    # Validasi Akhir
+    is_cleared = bool(nominal and source_id and dest_id and best_cat)
 
     return {
         "success": True,
-        "intent": "add transaction",
-        "message": f"{cat_type}: {cat_name} | Rp {nominal:,}",
-        "data": {
-            "original_text": text,
-            "type": cat_type,
-            "category": cat_name,
-            "amount": nominal,
-            "subject": subject,
-            "source_wallet": source,
-            "dest_wallet": dest,
-            "formatted": f"Rp {nominal:,}"
-        }
+        "amount": nominal,
+        "category_id": best_cat.id if best_cat else None,
+        "type_id": type_id,
+        "source_wallet_id": source_id,
+        "dest_wallet_id": dest_id,
+        "subject": subject,
+        "is_cleared": is_cleared
     }
-
-@app.get("/", response_class=HTMLResponse)
-def home():
-    return """
-
-    <html><head>
-
-                <title>AI Keuangan</title>
-
-                <style>
-
-                    body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f4f4f9; }
-
-                    .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
-
-                    .badge { background: #3498db; color: white; padding: 5px 10px; border-radius: 15px; font-size: 0.8em; }
-
-                </style>
-
-            </head>
-
-        <body>
-
-            <div class="card">
-
-                    <h1 style="color:green;"><span class="status-dot"></span> Webhook Ready</h1>
-
-                    <p>AI Keuangan Service is running perfectly.</p>
-
-                    <p>Endpoint URL: <span class="code">POST /analyze</span></p>
-
-                    <p>Testing URL: <span class="code">/docs</span></p>
-                    <p>Refresh: <span class="code">/refresh-keywords</span></p>
-
-                </div>
-
-        </body>
-
-    </html>
-    """
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=3987)

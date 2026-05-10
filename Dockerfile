@@ -21,4 +21,7 @@ USER appuser
 
 EXPOSE 3987
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3987", "--workers", "2"]
+
+# Ubah baris CMD terakhir menjadi ini agar uvicorn dijalankan via module 
+# dan mendukung signal terminasi Docker dengan lebih baik
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3987", "--workers", "2"]
