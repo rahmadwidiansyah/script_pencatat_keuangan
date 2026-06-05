@@ -4,4 +4,5 @@ pydantic
 python-dotenv
 thefuzz
 python-Levenshtein
-asyncpg
+scikit-learn
+python-multipart

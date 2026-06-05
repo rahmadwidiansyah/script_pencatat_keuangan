@@ -1,8 +1,12 @@
-.git
-.gitignore
+# Python
 __pycache__/
 *.pyc
-Dockerfile
-tester.py
 .venv/
 .env
+
+# Model & Dataset (Jangan di-track oleh Git)
+storage/models/*.pkl
+storage/datasets/*.jsonl
+
+# Log
+*.log
